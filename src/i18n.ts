@@ -1,0 +1,42 @@
+export const translations = {
+  id: {
+    title: "Roda Pemilih Nama Acak",
+    addName: "Tambahkan nama...",
+    pasteNames: "Atau tempel beberapa nama di sini (satu per baris)...",
+    addAll: "Tambahkan Semua",
+    names: "Nama",
+    clearAll: "Hapus Semua",
+    noNames: "Belum ada nama yang ditambahkan.",
+    dragSpin: "Putar Tarik",
+    buttonSpin: "Putar Tombol",
+    autoSpin: "Putar Otomatis",
+    spin: "PUTAR!",
+    winner: "Kami punya pemenang!",
+    spinAgain: "Putar Lagi",
+    removeAndSpin: "Hapus & Putar Lagi",
+    close: "Tutup",
+    autoSpinning: "Memutar lagi dalam beberapa detik...",
+    darkMode: "Mode Gelap",
+    lightMode: "Mode Terang"
+  },
+  en: {
+    title: "Random Name Picker Wheel",
+    addName: "Add a name...",
+    pasteNames: "Or paste multiple names here (one per line)...",
+    addAll: "Add All",
+    names: "Names",
+    clearAll: "Clear All",
+    noNames: "No names added yet.",
+    dragSpin: "Drag Spin",
+    buttonSpin: "Button Spin",
+    autoSpin: "Auto Spin",
+    spin: "SPIN!",
+    winner: "We have a winner!",
+    spinAgain: "Spin Again",
+    removeAndSpin: "Remove & Spin Again",
+    close: "Close",
+    autoSpinning: "Spinning again in a few seconds...",
+    darkMode: "Dark Mode",
+    lightMode: "Light Mode"
+  }
+};
