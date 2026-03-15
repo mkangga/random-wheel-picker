@@ -27,6 +27,10 @@ export default function App() {
     const saved = localStorage.getItem('names');
     return saved ? JSON.parse(saved) : DEFAULT_NAMES;
   });
+  const [winCounts, setWinCounts] = useState<Record<string, number>>(() => {
+    const saved = localStorage.getItem('winCounts');
+    return saved ? JSON.parse(saved) : {};
+  });
   const [newName, setNewName] = useState('');
   const [bulkNames, setBulkNames] = useState('');
   const [isSpinning, setIsSpinning] = useState(false);
@@ -41,6 +45,7 @@ export default function App() {
 
   // --- Persistence ---
   useEffect(() => { localStorage.setItem('names', JSON.stringify(names)); }, [names]);
+  useEffect(() => { localStorage.setItem('winCounts', JSON.stringify(winCounts)); }, [winCounts]);
   useEffect(() => { localStorage.setItem('spinMode', spinMode); }, [spinMode]);
   useEffect(() => { localStorage.setItem('lang', lang); }, [lang]);
   useEffect(() => { localStorage.setItem('darkMode', JSON.stringify(darkMode)); }, [darkMode]);
@@ -70,11 +75,13 @@ export default function App() {
 
   const wheelRef = useRef<HTMLCanvasElement>(null);
   const requestRef = useRef<number>(null);
+  const lastWinnerRef = useRef<string | null>(null);
   
   // Physics state
   const physics = useRef({
     angle: 0,
     velocity: 0,
+    friction: 0.99,
     isDragging: false,
     lastMouseAngle: 0,
     lastTime: 0,
@@ -168,7 +175,7 @@ export default function App() {
     if (!physics.current.isDragging) {
       physics.current.angle += physics.current.velocity;
       // Physics: Friction is slightly less for longer, more satisfying spins
-      physics.current.velocity *= 0.99; 
+      physics.current.velocity *= physics.current.friction; 
 
       if (Math.abs(physics.current.velocity) < 0.002 && physics.current.velocity !== 0) {
         physics.current.velocity = 0;
@@ -185,6 +192,13 @@ export default function App() {
           
           const wonName = names[winnerIndex];
           setWinner(wonName);
+          lastWinnerRef.current = wonName;
+          
+          // Update win counts
+          setWinCounts(prev => ({
+            ...prev,
+            [wonName]: (prev[wonName] || 0) + 1
+          }));
           
           // Confetti
           confetti({
@@ -285,9 +299,58 @@ export default function App() {
     setWinner(null);
     setIsSpinning(true);
     spinSound.play();
-    // Random velocity between 0.3 and 0.6
-    physics.current.velocity = Math.random() * 0.3 + 0.3;
-  }, [names.length, isSpinning]);
+    
+    // Helper to predict where the wheel will land
+    const predictWinner = (v0: number, f: number, currentAngle: number, numNames: number) => {
+      let v = v0;
+      let angle = currentAngle;
+      while (v >= 0.002) {
+        angle += v;
+        v *= f;
+      }
+      const sliceAngle = (2 * Math.PI) / numNames;
+      let normalizedAngle = (-angle) % (2 * Math.PI);
+      if (normalizedAngle < 0) normalizedAngle += 2 * Math.PI;
+      return Math.floor(normalizedAngle / sliceAngle);
+    };
+
+    // Generate a random velocity and friction
+    let v0 = Math.random() * 0.5 + 0.4; // 0.4 to 0.9
+    let f = 0.985 + Math.random() * 0.01; // Randomize friction slightly (0.985 to 0.995)
+
+    // Smart Fairness: Try to distribute wins more evenly
+    if (names.length > 1) {
+      let attempts = 0;
+      let predictedIndex = predictWinner(v0, f, physics.current.angle, names.length);
+      
+      // Calculate average wins to identify "over-winners"
+      const currentWinCounts = names.map(n => winCounts[n] || 0);
+      const avgWins = currentWinCounts.reduce((a, b) => a + b, 0) / names.length;
+      
+      while (attempts < 15) {
+        const predictedName = names[predictedIndex];
+        const nameWins = winCounts[predictedName] || 0;
+        
+        // Conditions to re-roll:
+        // 1. It's the same as the very last winner
+        // 2. This name has won significantly more than the average
+        const isLastWinner = predictedName === lastWinnerRef.current;
+        const isOverWinner = nameWins > avgWins + 1.5;
+        
+        if (isLastWinner || isOverWinner) {
+          v0 = Math.random() * 0.5 + 0.4;
+          f = 0.985 + Math.random() * 0.01;
+          predictedIndex = predictWinner(v0, f, physics.current.angle, names.length);
+          attempts++;
+        } else {
+          break;
+        }
+      }
+    }
+
+    physics.current.velocity = v0;
+    physics.current.friction = f;
+  }, [names, isSpinning, winCounts]);
 
   // Auto spin logic
   useEffect(() => {
@@ -339,6 +402,7 @@ export default function App() {
 
   const clearAllNames = () => {
     setNames([]);
+    setWinCounts({});
   };
 
   const removeWinnerAndSpin = () => {
@@ -349,7 +413,8 @@ export default function App() {
       if (newNames.length > 0) {
         setIsSpinning(true);
         spinSound.play();
-        physics.current.velocity = Math.random() * 0.3 + 0.3;
+        physics.current.velocity = Math.random() * 0.4 + 0.4;
+        physics.current.friction = 0.99;
       }
     }
   };
