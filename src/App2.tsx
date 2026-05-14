@@ -7,34 +7,9 @@ import { cn } from './lib/utils';
 import { translations } from './i18n';
 
 // --- Sound Effects ---
+const spinSound = new Howl({ src: ['https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg'], volume: 0.2 });
 const winSound = new Howl({ src: ['https://actions.google.com/sounds/v1/cartoon/success_bell.ogg'], volume: 0.5 });
 const removeSound = new Howl({ src: ['https://actions.google.com/sounds/v1/cartoon/pop.ogg'], volume: 0.3 });
-
-let audioCtx: AudioContext | null = null;
-const playTick = (velocity: number, isMuted: boolean) => {
-  if (isMuted) return;
-  try {
-    if (!audioCtx) {
-      audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume();
-    }
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    const v = Math.abs(velocity);
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(400 + v * 800, audioCtx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.05);
-    const volume = Math.min(0.2, v * 0.5 + 0.02);
-    gain.gain.setValueAtTime(volume, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + 0.05);
-  } catch(e) {}
-};
 
 // --- Constants & Helpers ---
 const COLORS = [
@@ -118,7 +93,6 @@ export default function App() {
   const wheelRef = useRef<HTMLCanvasElement>(null);
   const requestRef = useRef<number>(null);
   const lastWinnerRef = useRef<string | null>(null);
-  const lastSliceIndex = useRef<number>(-1);
   
   const physics = useRef({ angle: 0, velocity: 0, friction: 0.99, isDragging: false, lastMouseAngle: 0, lastTime: 0 });
 
@@ -192,71 +166,47 @@ export default function App() {
   }, [names, darkMode, t.noNames]);
 
   const updatePhysics = useCallback(() => {
-    // Check current slice for tick sound
-    if (names.length > 0) {
-      const sliceAngle = (2 * Math.PI) / names.length;
-      let normalizedAngle = (-physics.current.angle) % (2 * Math.PI);
-      if (normalizedAngle < 0) normalizedAngle += 2 * Math.PI;
-      const currentIndex = Math.floor(normalizedAngle / sliceAngle);
-
-      if (currentIndex !== lastSliceIndex.current) {
-        lastSliceIndex.current = currentIndex;
-        if (physics.current.isDragging || isSpinning) {
-           playTick(physics.current.isDragging ? physics.current.velocity || 0.1 : physics.current.velocity, isMuted);
-        }
-      }
-    }
-
     if (!physics.current.isDragging) {
-      if (physics.current.velocity !== 0) {
-        physics.current.angle += physics.current.velocity;
+      physics.current.angle += physics.current.velocity;
+      physics.current.velocity *= physics.current.friction; 
+
+      if (Math.abs(physics.current.velocity) < 0.0015 && physics.current.velocity !== 0) {
+        physics.current.velocity = 0;
+        setIsSpinning(false);
+        spinSound.stop();
+        winSound.play();
         
-        if (physics.current.velocity > 0) {
-           physics.current.velocity *= physics.current.friction; 
-           physics.current.velocity -= 0.0005; 
-           if (physics.current.velocity <= 0) physics.current.velocity = 0;
-        } else if (physics.current.velocity < 0) {
-           physics.current.velocity *= physics.current.friction;
-           physics.current.velocity += 0.0005;
-           if (physics.current.velocity >= 0) physics.current.velocity = 0;
-        }
-
-        if (physics.current.velocity === 0 && isSpinning) {
-          setIsSpinning(false);
-          winSound.play();
+        if (names.length > 0) {
+          const sliceAngle = (2 * Math.PI) / names.length;
+          let normalizedAngle = (-physics.current.angle) % (2 * Math.PI);
+          if (normalizedAngle < 0) normalizedAngle += 2 * Math.PI;
+          const winnerIndex = Math.floor(normalizedAngle / sliceAngle);
           
-          if (names.length > 0) {
-            const sliceAngle = (2 * Math.PI) / names.length;
-            let normalizedAngle = (-physics.current.angle) % (2 * Math.PI);
-            if (normalizedAngle < 0) normalizedAngle += 2 * Math.PI;
-            const winnerIndex = Math.floor(normalizedAngle / sliceAngle);
-            
-            const wonName = names[winnerIndex];
-            setWinner(wonName);
-            lastWinnerRef.current = wonName;
-            
-            setWinCounts(prev => ({ ...prev, [wonName]: (prev[wonName] || 0) + 1 }));
-            setHistory(prev => [{name: wonName, time: Date.now()}, ...prev].slice(0, 50));
-            
-            confetti({
-              particleCount: 200,
-              spread: 90,
-              origin: { y: 0.5 },
-              colors: ['#FF595E', '#FFCA3A', '#8AC926', '#1982C4', '#6A4C93']
-            });
+          const wonName = names[winnerIndex];
+          setWinner(wonName);
+          lastWinnerRef.current = wonName;
+          
+          setWinCounts(prev => ({ ...prev, [wonName]: (prev[wonName] || 0) + 1 }));
+          setHistory(prev => [{name: wonName, time: Date.now()}, ...prev].slice(0, 50));
+          
+          confetti({
+            particleCount: 200,
+            spread: 90,
+            origin: { y: 0.5 },
+            colors: ['#FF595E', '#FFCA3A', '#8AC926', '#1982C4', '#6A4C93']
+          });
 
-            if (autoRemove) {
-               setTimeout(() => {
-                   setNames(prev => prev.filter(n => n !== wonName));
-               }, 3000);
-            }
+          if (autoRemove) {
+             setTimeout(() => {
+                 setNames(prev => prev.filter(n => n !== wonName));
+             }, 3000);
           }
         }
       }
     }
     drawWheel();
     requestRef.current = requestAnimationFrame(updatePhysics);
-  }, [names, drawWheel, autoRemove, isSpinning, isMuted]);
+  }, [names, drawWheel, autoRemove]);
 
   useEffect(() => {
     requestRef.current = requestAnimationFrame(updatePhysics);
@@ -282,6 +232,7 @@ export default function App() {
     physics.current.lastMouseAngle = getMouseAngle(e);
     physics.current.lastTime = performance.now();
     setIsSpinning(false);
+    spinSound.stop();
   };
 
   const handlePointerMove = (e: React.MouseEvent | React.TouchEvent) => {
@@ -305,6 +256,7 @@ export default function App() {
     physics.current.isDragging = false;
     if (Math.abs(physics.current.velocity) > 0.05) {
       setIsSpinning(true);
+      spinSound.play();
     }
   };
 
@@ -320,23 +272,19 @@ export default function App() {
     if (names.length === 0 || isSpinning) return;
     setWinner(null);
     setIsSpinning(true);
+    spinSound.play();
     
     const predictWinner = (v0: number, f: number, currentAngle: number, numNames: number) => {
       let v = v0;
       let angle = currentAngle;
-      while (v > 0) { 
-        angle += v; 
-        v *= f; 
-        v -= 0.0005;
-        if (v < 0) v = 0;
-      }
+      while (v >= 0.0015) { angle += v; v *= f; }
       const sliceAngle = (2 * Math.PI) / numNames;
       let normalizedAngle = (-angle) % (2 * Math.PI);
       if (normalizedAngle < 0) normalizedAngle += 2 * Math.PI;
       return Math.floor(normalizedAngle / sliceAngle);
     };
 
-    let v0 = Math.random() * 0.6 + 0.5;
+    let v0 = Math.random() * 0.5 + 0.4;
     let f = 0.985 + Math.random() * 0.01;
 
     if (names.length > 1) {
@@ -525,7 +473,7 @@ export default function App() {
                 <div className="space-y-2">
                   {Object.keys(savedLists).length === 0 ? <p className="text-sm opacity-50">No saved lists.</p> : Object.entries(savedLists).map(([name, list]) => (
                     <div key={name} className={cn("flex items-center justify-between px-3 py-2 rounded-lg", darkMode ? "bg-slate-800" : "bg-white border shadow-sm", currentListName === name ? "border-l-4 border-l-blue-500" : "")}>
-                      <div><p className="font-medium text-sm">{name}</p><p className="text-xs opacity-50">{(list as string[]).length} names</p></div>
+                      <div><p className="font-medium text-sm">{name}</p><p className="text-xs opacity-50">{list.length} names</p></div>
                       <div className="flex gap-2">
                         <button onClick={() => loadList(name)} className="text-blue-500 bg-blue-500/10 px-2 py-1 rounded text-xs font-semibold hover:bg-blue-500/20">Load</button>
                         <button onClick={() => deleteList(name)} className="text-red-500 bg-red-500/10 p-1 rounded hover:bg-red-500/20"><X className="w-4 h-4" /></button>
@@ -615,13 +563,6 @@ export default function App() {
                       </div>
                     </div>
                     <div>
-                      <div className="flex justify-between items-center mb-2">
-                        <label className="text-sm font-medium">Touch Sensitivity</label>
-                        <span className="text-xs opacity-50 font-bold">{sensitivity.toFixed(1)}x</span>
-                      </div>
-                      <input type="range" min="0.5" max="2" step="0.1" value={sensitivity} onChange={e => setSensitivity(parseFloat(e.target.value))} className="w-full h-8 accent-blue-600" />
-                    </div>
-                    <div>
                        <label className="flex items-center justify-between cursor-pointer p-4 rounded-xl border dark:border-slate-800">
                           <span className="font-medium">Auto-remove winner</span>
                           <input type="checkbox" checked={autoRemove} onChange={e => setAutoRemove(e.target.checked)} className="w-5 h-5 accent-blue-600" />
@@ -636,7 +577,7 @@ export default function App() {
                       <div className="space-y-2">
                         {Object.entries(savedLists).map(([name, list]) => (
                           <div key={name} className={cn("flex items-center justify-between px-3 py-3 rounded-lg border", darkMode ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-zinc-200", currentListName === name ? "border-l-4 border-l-blue-500" : "")}>
-                            <div><p className="font-medium text-sm">{name}</p><p className="text-xs opacity-50">{(list as string[]).length} names</p></div>
+                            <div><p className="font-medium text-sm">{name}</p><p className="text-xs opacity-50">{list.length} names</p></div>
                             <div className="flex gap-2">
                               <button onClick={() => loadList(name)} className="text-blue-500 bg-blue-500/10 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-blue-500/20">Load</button>
                               <button onClick={() => deleteList(name)} className="text-red-500 bg-red-500/10 p-1.5 rounded-lg hover:bg-red-500/20"><X className="w-4 h-4" /></button>
